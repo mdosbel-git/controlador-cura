@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controlador de Cura</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #001933; color: #fff; padding: 20px; }
+h1 { color: #00FFFF; text-align: center; margin-bottom: 5px; font-size: 24px; }
+.status { text-align: center; font-size: 12px; margin-bottom: 15px; }
+.connected { color: #00FF00; }
+.disconnected { color: #FF0000; }
+.card { background: #002b4d; border-radius: 12px; padding: 20px; margin: 10px 0; }
+.row { display: flex; justify-content: space-around; flex-wrap: wrap; }
+.sensor { text-align: center; padding: 10px; }
+.sensor-label { color: #aaa; font-size: 14px; }
+.sensor-value { font-size: 48px; font-weight: bold; }
+.temp { color: #FF6600; }
+.umid { color: #00AAFF; }
+.modo-btn { display: block; width: 200px; margin: 10px auto; padding: 12px;
+  border: none; border-radius: 8px; font-size: 16px; font-weight: bold;
+  cursor: pointer; color: #fff; }
+.modo-auto { background: #0066CC; }
+.modo-manual { background: #CC6600; }
+.status-text { text-align: center; padding: 8px; font-size: 14px; color: #FFFF00; }
+.relays { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 10px; }
+.relay-btn { width: 150px; padding: 20px 10px; border: none; border-radius: 8px;
+  font-size: 18px; font-weight: bold; cursor: pointer; color: #fff; }
+.relay-on { background: #00AA00; }
+.relay-off { background: #555; }
+.relay-off-auto { background: #222; cursor: not-allowed; }
+.legend { text-align: center; color: #444; font-size: 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<h1>Controlador de Cura</h1>
+<div class="status">
+  MQTT: <span id="mqtt_status" class="disconnected">Conectando...</span>
+</div>
+
+<div class="card">
+  <div class="row">
+    <div class="sensor">
+      <div class="sensor-label">TEMPERATURA</div>
+      <div class="sensor-value temp" id="temp">--</div>
+    </div>
+    <div class="sensor">
+      <div class="sensor-label">UMIDADE</div>
+      <div class="sensor-value umid" id="umid">--%</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <button class="modo-btn modo-auto" id="btn_modo" onclick="toggleModo()">MODO: AUTO</button>
+  <div class="status-text" id="status_text">Aguardando dados...</div>
+</div>
+
+<div class="card">
+  <div style="text-align:center;color:#aaa;margin-bottom:10px;">CONTROLE MANUAL</div>
+  <div class="relays">
+    <button class="relay-btn relay-off-auto" id="r0" onclick="toggleRele(0)">R1 OFF</button>
+    <button class="relay-btn relay-off-auto" id="r1" onclick="toggleRele(1)">R2 OFF</button>
+    <button class="relay-btn relay-off-auto" id="r2" onclick="toggleRele(2)">R3 OFF</button>
+    <button class="relay-btn relay-off-auto" id="r3" onclick="toggleRele(3)">R4 OFF</button>
+  </div>
+  <div class="legend">AUTO: R1+R2=Aquecimento(&lt;25C) R3+R4=Resfriamento(&gt;27C)</div>
+</div>
+
+<script>
+var MQTT_HOST = 'bf4c591ad3564264965695e79dba8146.s1.eu.hivemq.cloud';
+var MQTT_PORT = 8884;
+var MQTT_USER = 'eletrodem';
+var MQTT_PASS = 'Asdfghjklçpoiu8705@2026';
+
+var modoAuto = true;
+var reles = [false, false, false, false];
+var client;
+
+function connect() {
+  client = mqtt.connect('wss://' + MQTT_HOST + ':' + MQTT_PORT + '/mqtt', {
+    username: MQTT_USER,
+    password: MQTT_PASS,
+    reconnectPeriod: 3000
+  });
+
+  client.on('connect', function() {
+    document.getElementById('mqtt_status').innerText = 'Conectado';
+    document.getElementById('mqtt_status').className = 'connected';
+    client.subscribe('controlador/#');
+  });
+
+  client.on('disconnect', function() {
+    document.getElementById('mqtt_status').innerText = 'Desconectado';
+    document.getElementById('mqtt_status').className = 'disconnected';
+  });
+
+  client.on('message', function(topic, message) {
+    var msg = message.toString();
+    if (topic === 'controlador/temperatura') {
+      document.getElementById('temp').innerText = msg + '°F';
+    } else if (topic === 'controlador/umidade') {
+      document.getElementById('umid').innerText = msg + '%';
+    } else if (topic === 'controlador/modo') {
+      modoAuto = (msg === 'auto');
+      atualizarUI();
+    } else if (topic === 'controlador/reles') {
+      for (var i = 0; i < 4; i++) reles[i] = (msg[i] === '1');
+      atualizarBotoes();
+    }
+  });
+}
+
+function atualizarUI() {
+  var btn = document.getElementById('btn_modo');
+  if (modoAuto) {
+    btn.innerText = 'MODO: AUTO';
+    btn.className = 'modo-btn modo-auto';
+  } else {
+    btn.innerText = 'MODO: MANUAL';
+    btn.className = 'modo-btn modo-manual';
+  }
+  atualizarBotoes();
+}
+
+function atualizarBotoes() {
+  for (var i = 0; i < 4; i++) {
+    var rb = document.getElementById('r' + i);
+    if (modoAuto) {
+      rb.className = 'relay-btn relay-off-auto';
+    } else if (reles[i]) {
+      rb.className = 'relay-btn relay-on';
+    } else {
+      rb.className = 'relay-btn relay-off';
+    }
+    rb.innerText = 'R' + (i+1) + (reles[i] ? ' ON' : ' OFF');
+  }
+}
+
+function toggleModo() {
+  var novo = modoAuto ? 'manual' : 'auto';
+  client.publish('controlador/cmd/modo', novo);
+}
+
+function toggleRele(n) {
+  if (modoAuto) return;
+  var novo = reles[n] ? '0' : '1';
+  client.publish('controlador/cmd/rele', n + ':' + novo);
+}
+
+connect();
+</script>
+</body>
+</html>
