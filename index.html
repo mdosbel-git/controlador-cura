@@ -1,157 +1,370 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Controlador de Cura</title>
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050D1F">
+<title>Controlador de Cura – EletroDEM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Arial, sans-serif; background: #001933; color: #fff; padding: 20px; }
-h1 { color: #00FFFF; text-align: center; margin-bottom: 5px; font-size: 24px; }
-.status { text-align: center; font-size: 12px; margin-bottom: 15px; }
-.connected { color: #00FF00; }
-.disconnected { color: #FF0000; }
-.card { background: #002b4d; border-radius: 12px; padding: 20px; margin: 10px 0; }
-.row { display: flex; justify-content: space-around; flex-wrap: wrap; }
-.sensor { text-align: center; padding: 10px; }
-.sensor-label { color: #aaa; font-size: 14px; }
-.sensor-value { font-size: 48px; font-weight: bold; }
-.temp { color: #FF6600; }
-.umid { color: #00AAFF; }
-.modo-btn { display: block; width: 200px; margin: 10px auto; padding: 12px;
-  border: none; border-radius: 8px; font-size: 16px; font-weight: bold;
-  cursor: pointer; color: #fff; }
-.modo-auto { background: #0066CC; }
-.modo-manual { background: #CC6600; }
-.status-text { text-align: center; padding: 8px; font-size: 14px; color: #FFFF00; }
-.relays { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 10px; }
-.relay-btn { width: 150px; padding: 20px 10px; border: none; border-radius: 8px;
-  font-size: 18px; font-weight: bold; cursor: pointer; color: #fff; }
-.relay-on { background: #00AA00; }
-.relay-off { background: #555; }
-.relay-off-auto { background: #222; cursor: not-allowed; }
-.legend { text-align: center; color: #444; font-size: 12px; margin-top: 10px; }
+  :root {
+    --fundo:     #050D1F;
+    --painel:    #0D1F3A;
+    --borda:     #1A3A6A;
+    --texto:     #E6EEFF;
+    --suave:     #7799BB;
+    --temp:      #FF6A2A;
+    --umid:      #2EB8FF;
+    --setpoint:  #FFDD00;
+    --ok:        #00EE66;
+    --alerta:    #FFAA00;
+    --botao:     #1A5A9A;
+    --botao-off: #222A36;
+    --manual:    #AA4400;
+    --auto-t:    #007700;
+    --auto-u:    #005577;
+    --alarme:    #BB0000;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--fundo);
+    color: var(--texto);
+    font-family: 'Montserrat', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    padding: env(safe-area-inset-top, 0px) 12px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  }
+  .app { max-width: 560px; margin: 0 auto; }
+
+  /* Cabeçalho */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 2px 10px;
+  }
+  header h1 { margin: 0; font-size: 1.05rem; font-weight: 700; color: #00CCFF; }
+  .conexao { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--suave); }
+  .ponto { width: 10px; height: 10px; border-radius: 50%; background: #555; }
+  .ponto.on  { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .ponto.off { background: #CC2222; }
+
+  .painel {
+    background: var(--painel);
+    border: 2px solid var(--borda);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+
+  /* Etapa */
+  .etapa { display: flex; align-items: center; gap: 10px; padding: 10px; }
+  .etapa .nome { flex: 1; text-align: center; }
+  .etapa .nome strong { display: block; font-size: 1.2rem; font-weight: 800; color: #00CCFF; letter-spacing: .02em; }
+  .etapa .nome span { font-size: .85rem; color: var(--suave); }
+  .seta {
+    width: 52px; height: 52px; border: 0; border-radius: 12px;
+    background: var(--botao); color: #fff; font-size: 1.4rem; cursor: pointer;
+  }
+
+  /* Leituras */
+  .leituras { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .leitura { margin: 0; border-left: 5px solid var(--temp); }
+  .leitura.u { border-left-color: var(--umid); }
+  .leitura h2 { margin: 0 0 4px; font-size: .8rem; font-weight: 600; color: var(--temp); }
+  .leitura.u h2 { color: var(--umid); }
+  .leitura .valor { font-size: 2.6rem; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .leitura .valor small { font-size: 1.1rem; font-weight: 700; margin-left: 2px; }
+
+  /* Setpoint */
+  .linha-titulo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .linha-titulo h2 { margin: 0; font-size: .85rem; font-weight: 600; color: var(--suave); }
+  .ajuste { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .ajuste .sp { font-size: 3rem; font-weight: 800; color: var(--setpoint); font-variant-numeric: tabular-nums; }
+  .mais-menos {
+    width: 64px; height: 56px; border: 0; border-radius: 12px;
+    background: var(--botao); color: #fff; font-size: 1.8rem; font-weight: 700; cursor: pointer;
+  }
+
+  /* Botões de modo */
+  .modo {
+    border: 0; border-radius: 10px; padding: 10px 14px;
+    font: 700 .8rem 'Montserrat', sans-serif; color: #fff; cursor: pointer;
+    background: var(--manual); min-width: 120px;
+  }
+  .modo.auto-t { background: var(--auto-t); }
+  .modo.auto-u { background: var(--auto-u); }
+  .modo.alarme-on  { background: var(--alarme); }
+  .modo.alarme-off { background: #333; }
+
+  /* Flap */
+  .flap-status {
+    font-size: 1.35rem; font-weight: 800; color: var(--ok);
+    min-height: 1.8em; display: flex; align-items: center;
+  }
+  .flap-status.alerta { color: var(--alerta); animation: pisca .8s steps(2, start) infinite; font-size: 1.05rem; }
+  @keyframes pisca { to { opacity: .25; } }
+  .barra { height: 12px; background: #0A1628; border: 1px solid var(--borda); border-radius: 6px; overflow: hidden; margin: 8px 0 14px; }
+  .barra div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--auto-u), var(--umid)); transition: width .4s; }
+  .botoes-flap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .acao {
+    border: 0; border-radius: 10px; height: 54px;
+    font: 700 1rem 'Montserrat', sans-serif; color: #fff; background: var(--botao); cursor: pointer;
+  }
+  .acao:disabled, .seta:disabled, .mais-menos:disabled { background: var(--botao-off); color: #556070; cursor: not-allowed; }
+  .parcial { border-top: 1px solid var(--borda); padding-top: 12px; }
+  .parcial p { margin: 0 0 8px; font-size: .8rem; color: var(--suave); }
+  .parcial .controles { display: flex; gap: 10px; }
+  .parcial select {
+    flex: 1; height: 50px; border-radius: 10px; border: 2px solid var(--borda);
+    background: #0A1628; color: var(--texto); font: 700 1.1rem 'Montserrat', sans-serif; padding: 0 12px;
+  }
+  .parcial .acao { flex: 1; }
+
+  /* Rodapé e avisos */
+  footer { display: flex; justify-content: space-between; font-size: .75rem; color: var(--suave); padding: 6px 2px; }
+  .aviso {
+    position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+    transform: translateX(-50%) translateY(150%);
+    background: #1A2A44; border: 2px solid var(--alerta); color: var(--texto);
+    padding: 12px 18px; border-radius: 12px; font-size: .9rem; max-width: 92vw; text-align: center;
+    transition: transform .25s;
+  }
+  .aviso.ok { border-color: var(--ok); }
+  .aviso.mostrar { transform: translateX(-50%) translateY(0); }
+  .offline-faixa {
+    display: none; background: #3A0A0A; border: 2px solid #CC2222; color: #FFB3B3;
+    border-radius: 12px; padding: 10px 14px; margin-bottom: 10px; font-size: .85rem;
+  }
+  .offline-faixa.mostrar { display: block; }
+  button:focus-visible, select:focus-visible { outline: 3px solid #00CCFF; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    .flap-status.alerta { animation: none; }
+    .barra div, .aviso { transition: none; }
+  }
+  @media (max-width: 360px) {
+    .leitura .valor { font-size: 2.1rem; }
+    .ajuste .sp { font-size: 2.4rem; }
+  }
 </style>
 </head>
 <body>
-<h1>Controlador de Cura</h1>
-<div class="status">
-  MQTT: <span id="mqtt_status" class="disconnected">Conectando...</span>
-</div>
+<div class="app">
+  <header>
+    <h1>Controlador de Cura</h1>
+    <div class="conexao"><span id="txt-conexao">Conectando…</span><span class="ponto" id="ponto"></span></div>
+  </header>
 
-<div class="card">
-  <div class="row">
-    <div class="sensor">
-      <div class="sensor-label">TEMPERATURA</div>
-      <div class="sensor-value temp" id="temp">--</div>
-    </div>
-    <div class="sensor">
-      <div class="sensor-label">UMIDADE</div>
-      <div class="sensor-value umid" id="umid">--%</div>
-    </div>
+  <div class="offline-faixa" id="faixa-offline">
+    O controlador está sem conexão com a internet. Os dados abaixo são da última leitura recebida.
   </div>
+
+  <section class="painel etapa">
+    <button class="seta" id="etapa-ant" aria-label="Etapa anterior">◀</button>
+    <div class="nome"><strong id="etapa-nome">—</strong><span id="etapa-faixa"></span></div>
+    <button class="seta" id="etapa-prox" aria-label="Próxima etapa">▶</button>
+  </section>
+
+  <section class="leituras">
+    <div class="painel leitura">
+      <h2>Temperatura</h2>
+      <div class="valor"><span id="temp">--</span><small>°F</small></div>
+    </div>
+    <div class="painel leitura u">
+      <h2>Umidade</h2>
+      <div class="valor"><span id="umid">--</span><small>%</small></div>
+    </div>
+  </section>
+
+  <section class="painel">
+    <div class="linha-titulo">
+      <h2>Temperatura desejada</h2>
+      <button class="modo" id="modo-temp">MANUAL TEMP</button>
+    </div>
+    <div class="ajuste">
+      <button class="mais-menos" id="sp-menos" aria-label="Diminuir temperatura desejada">−</button>
+      <div class="sp"><span id="sp">--</span>°F</div>
+      <button class="mais-menos" id="sp-mais" aria-label="Aumentar temperatura desejada">+</button>
+    </div>
+  </section>
+
+  <section class="painel">
+    <div class="linha-titulo">
+      <h2>Controle de umidade / flap</h2>
+      <button class="modo" id="modo-umid">MANUAL UMID</button>
+    </div>
+    <div class="flap-status" id="flap-txt">---</div>
+    <div class="barra" aria-hidden="true"><div id="flap-barra"></div></div>
+    <div class="botoes-flap">
+      <button class="acao" id="flap-abre">ABRE</button>
+      <button class="acao" id="flap-fecha">FECHA</button>
+    </div>
+    <div class="parcial">
+      <p>Abertura parcial (0% = fechado, 100% = totalmente aberto)</p>
+      <div class="controles">
+        <select id="flap-pos" aria-label="Abertura desejada do flap"></select>
+        <button class="acao" id="flap-mover">MOVER</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="painel linha-titulo" style="margin-bottom:10px">
+    <h2>Alarme de temperatura</h2>
+    <button class="modo alarme-on" id="alarme">ALARME ON</button>
+  </section>
+
+  <footer>
+    <span id="data-hora">--</span>
+    <span id="rede"></span>
+  </footer>
 </div>
 
-<div class="card">
-  <button class="modo-btn modo-auto" id="btn_modo" onclick="toggleModo()">MODO: AUTO</button>
-  <div class="status-text" id="status_text">Aguardando dados...</div>
-</div>
-
-<div class="card">
-  <div style="text-align:center;color:#aaa;margin-bottom:10px;">CONTROLE MANUAL</div>
-  <div class="relays">
-    <button class="relay-btn relay-off-auto" id="r0" onclick="toggleRele(0)">R1 OFF</button>
-    <button class="relay-btn relay-off-auto" id="r1" onclick="toggleRele(1)">R2 OFF</button>
-    <button class="relay-btn relay-off-auto" id="r2" onclick="toggleRele(2)">R3 OFF</button>
-    <button class="relay-btn relay-off-auto" id="r3" onclick="toggleRele(3)">R4 OFF</button>
-  </div>
-  <div class="legend">AUTO: R1+R2=Aquecimento(&lt;25C) R3+R4=Resfriamento(&gt;27C)</div>
-</div>
+<div class="aviso" id="aviso" role="status" aria-live="polite"></div>
 
 <script>
-var MQTT_HOST = 'bf4c591ad3564264965695e79dba8146.s1.eu.hivemq.cloud';
-var MQTT_PORT = 8884;
-var MQTT_USER = 'eletrodem';
-var MQTT_PASS = 'Asdfghjklçpoiu8705@2026';
+  // ── Conexão com o HiveMQ (MQTT sobre WebSocket seguro) ──
+  const BROKER = 'wss://bf4c591ad3564264965695e79dba8146.s1.eu.hivemq.cloud:8884/mqtt';
+  const USUARIO = 'eletrodem';
+  const SENHA = 'Asdfghjklçpoiu8705@2026';
 
-var modoAuto = true;
-var reles = [false, false, false, false];
-var client;
+  const $ = id => document.getElementById(id);
+  let st = null;              // último status recebido
+  let online = null;          // estado publicado pelo controlador
+  let ultimoStatus = 0;       // horário do último status (ms)
+  let timerAviso = null;
 
-function connect() {
-  client = mqtt.connect('wss://' + MQTT_HOST + ':' + MQTT_PORT + '/mqtt', {
-    username: MQTT_USER,
-    password: MQTT_PASS,
-    reconnectPeriod: 3000
+  // Opções de abertura parcial
+  for (let p = 0; p <= 100; p += 10) {
+    const o = document.createElement('option');
+    o.value = p; o.textContent = p + '%';
+    if (p === 50) o.selected = true;
+    $('flap-pos').appendChild(o);
+  }
+
+  const cliente = mqtt.connect(BROKER, {
+    username: USUARIO,
+    password: SENHA,
+    clientId: 'web_' + Math.random().toString(16).slice(2, 10),
+    reconnectPeriod: 3000,
+    connectTimeout: 10000,
+    clean: true
   });
 
-  client.on('connect', function() {
-    document.getElementById('mqtt_status').innerText = 'Conectado';
-    document.getElementById('mqtt_status').className = 'connected';
-    client.subscribe('controlador/#');
+  cliente.on('connect', () => {
+    cliente.subscribe(['controlador/status', 'controlador/online', 'controlador/resposta'], { qos: 1 });
+    atualizarConexao();
   });
+  cliente.on('reconnect', atualizarConexao);
+  cliente.on('close', atualizarConexao);
+  cliente.on('error', e => console.error('MQTT:', e));
 
-  client.on('disconnect', function() {
-    document.getElementById('mqtt_status').innerText = 'Desconectado';
-    document.getElementById('mqtt_status').className = 'disconnected';
-  });
-
-  client.on('message', function(topic, message) {
-    var msg = message.toString();
-    if (topic === 'controlador/temperatura') {
-      document.getElementById('temp').innerText = msg + '°F';
-    } else if (topic === 'controlador/umidade') {
-      document.getElementById('umid').innerText = msg + '%';
-    } else if (topic === 'controlador/modo') {
-      modoAuto = (msg === 'auto');
-      document.getElementById('status_text').innerText = modoAuto ? 'Modo AUTO ativado' : 'Modo MANUAL ativado';
-      atualizarUI();
-    } else if (topic === 'controlador/reles') {
-      for (var i = 0; i < 4; i++) reles[i] = (msg[i] === '1');
-      atualizarBotoes();
+  cliente.on('message', (topico, msg) => {
+    const txt = msg.toString();
+    if (topico === 'controlador/status') {
+      try { st = JSON.parse(txt); ultimoStatus = Date.now(); render(); } catch (e) { console.error(e); }
+    } else if (topico === 'controlador/online') {
+      online = (txt === '1');
+      atualizarConexao();
+    } else if (topico === 'controlador/resposta') {
+      if (txt !== 'OK') mostrarAviso(txt, false);
     }
   });
-}
 
-function atualizarUI() {
-  var btn = document.getElementById('btn_modo');
-  if (modoAuto) {
-    btn.innerText = 'MODO: AUTO';
-    btn.className = 'modo-btn modo-auto';
-  } else {
-    btn.innerText = 'MODO: MANUAL';
-    btn.className = 'modo-btn modo-manual';
+  function enviar(cmd, valor) {
+    if (!cliente.connected) { mostrarAviso('Sem conexão com o servidor. Aguarde a reconexão.', false); return; }
+    if (online === false) { mostrarAviso('O controlador está offline. O comando não será executado.', false); return; }
+    cliente.publish('controlador/cmd/' + cmd, String(valor), { qos: 1 });
   }
-  atualizarBotoes();
-}
 
-function atualizarBotoes() {
-  for (var i = 0; i < 4; i++) {
-    var rb = document.getElementById('r' + i);
-    if (modoAuto) {
-      rb.className = 'relay-btn relay-off-auto';
-    } else if (reles[i]) {
-      rb.className = 'relay-btn relay-on';
-    } else {
-      rb.className = 'relay-btn relay-off';
-    }
-    rb.innerText = 'R' + (i+1) + (reles[i] ? ' ON' : ' OFF');
+  function controladorOnline() {
+    // Online se publicou "1" e o último status chegou há menos de 20 s
+    return online !== false && ultimoStatus > 0 && (Date.now() - ultimoStatus) < 20000;
   }
-}
 
-function toggleModo() {
-  var novo = modoAuto ? 'manual' : 'auto';
-  client.publish('controlador/cmd/modo', novo);
-}
+  function atualizarConexao() {
+    const ok = cliente.connected && controladorOnline();
+    $('ponto').className = 'ponto ' + (ok ? 'on' : 'off');
+    $('txt-conexao').textContent = !cliente.connected ? 'Sem conexão'
+                                 : ok ? 'Controlador online' : 'Controlador offline';
+    $('faixa-offline').classList.toggle('mostrar', cliente.connected && st !== null && !ok);
+    habilitar();
+  }
+  setInterval(atualizarConexao, 3000);
 
-function toggleRele(n) {
-  if (modoAuto) return;
-  var novo = reles[n] ? '0' : '1';
-  client.publish('controlador/cmd/rele', n + ':' + novo);
-}
+  function mostrarAviso(texto, ok) {
+    const a = $('aviso');
+    a.textContent = texto;
+    a.className = 'aviso mostrar' + (ok ? ' ok' : '');
+    clearTimeout(timerAviso);
+    timerAviso = setTimeout(() => a.classList.remove('mostrar'), 3500);
+  }
 
-connect();
+  function render() {
+    if (!st) return;
+    $('etapa-nome').textContent = st.etapa_nome;
+    $('etapa-faixa').textContent = st.etapa_faixa;
+    $('temp').textContent = st.temp === null ? '--' : st.temp.toFixed(1);
+    $('umid').textContent = st.umid === null ? '--' : st.umid.toFixed(1);
+    $('sp').textContent = st.sp;
+
+    const mt = $('modo-temp');
+    mt.textContent = st.auto_temp ? 'AUTO TEMP' : 'MANUAL TEMP';
+    mt.className = 'modo' + (st.auto_temp ? ' auto-t' : '');
+
+    const mu = $('modo-umid');
+    mu.textContent = st.auto_umid ? 'AUTO UMID' : 'MANUAL UMID';
+    mu.className = 'modo' + (st.auto_umid ? ' auto-u' : '');
+
+    const al = $('alarme');
+    al.textContent = st.sirene ? 'ALARME TOCANDO' : (st.alarme ? 'ALARME ON' : 'ALARME OFF');
+    al.className = 'modo ' + (st.alarme ? 'alarme-on' : 'alarme-off');
+
+    const ft = $('flap-txt');
+    ft.textContent = st.flap_txt;
+    ft.className = 'flap-status' + (st.flap_alerta ? ' alerta' : '');
+    $('flap-barra').style.width = (st.flap_valida ? st.flap_pos : 0) + '%';
+
+    $('data-hora').textContent = st.hora + (st.data ? '  ' + st.data : '');
+    $('rede').textContent = st.wifi ? 'Wi-Fi: ' + st.wifi : '';
+    atualizarConexao();
+  }
+
+  // Mesmas regras da tela do controlador
+  function habilitar() {
+    const ok = cliente.connected && controladorOnline() && st;
+    const manualU = ok && !st.auto_umid;
+    const manualT = ok && !st.auto_temp;
+    $('etapa-ant').disabled  = !ok || st.etapa <= 0;
+    $('etapa-prox').disabled = !ok || st.etapa >= st.num_etapas - 1;
+    $('sp-menos').disabled = !manualT || st.sp <= st.sp_min;
+    $('sp-mais').disabled  = !manualT || st.sp >= st.sp_max;
+    const falha = ok && st.flap_falha !== 0;
+    $('flap-abre').disabled  = !manualU || st.fc_aberto  || (!falha && st.flap_valida && st.flap_pos >= 100);
+    $('flap-fecha').disabled = !manualU || st.fc_fechado || (!falha && st.flap_valida && st.flap_pos <= 0);
+    $('flap-mover').disabled = !manualU;
+    $('flap-pos').disabled   = !manualU;
+    ['modo-temp', 'modo-umid', 'alarme'].forEach(id => $(id).disabled = !ok);
+  }
+
+  // Botões
+  $('etapa-ant').onclick  = () => enviar('etapa', 'ant');
+  $('etapa-prox').onclick = () => enviar('etapa', 'prox');
+  $('sp-menos').onclick   = () => enviar('setpoint', '-');
+  $('sp-mais').onclick    = () => enviar('setpoint', '+');
+  $('modo-temp').onclick  = () => enviar('modo_temp', 'toggle');
+  $('modo-umid').onclick  = () => enviar('modo_umid', 'toggle');
+  $('alarme').onclick     = () => enviar('alarme', 'toggle');
+  $('flap-abre').onclick  = () => enviar('flap', 'abre');
+  $('flap-fecha').onclick = () => enviar('flap', 'fecha');
+  $('flap-mover').onclick = () => {
+    const p = $('flap-pos').value;
+    enviar('flap', p);
+    mostrarAviso('Movendo o flap para ' + p + '%', true);
+  };
+
+  habilitar();
 </script>
 </body>
 </html>
